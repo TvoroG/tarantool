@@ -37,6 +37,7 @@
 #include "iproto_constants.h"
 #include "txn.h"
 #include "rmean.h"
+#include "space_upgrade.h"
 #include "info/info.h"
 #include "memtx_tx.h"
 
@@ -238,6 +239,7 @@ box_index_get(uint32_t space_id, uint32_t index_id, const char *key,
 	uint32_t part_count = mp_decode_array(&key);
 	if (exact_key_validate(index->def->key_def, key, part_count))
 		return -1;
+	bool is_being_upgraded = space_is_being_upgraded(space);
 	/* Start transaction in the engine. */
 	struct txn *txn;
 	struct txn_ro_savepoint svp;
@@ -250,8 +252,16 @@ box_index_get(uint32_t space_id, uint32_t index_id, const char *key,
 	txn_commit_ro_stmt(txn, &svp);
 	/* Count statistics. */
 	rmean_collect(rmean_box, IPROTO_SELECT, 1);
-	if (*result != NULL)
+	if (*result != NULL) {
+		if (is_being_upgraded) {
+			struct tuple *upgraded_tuple = NULL;
+			if (space_upgrade_convert_tuple(space, *result,
+							&upgraded_tuple) != 0)
+				return -1;
+			*result = upgraded_tuple;
+		}
 		tuple_bless(*result);
+	}
 	return 0;
 }
 
@@ -450,6 +460,8 @@ iterator_create(struct iterator *it, struct index *index)
 	it->space_id = index->def->space_id;
 	it->index_id = index->def->iid;
 	it->index = index;
+	it->space = space_by_id(it->space_id);
+	it->is_raw = false;
 }
 
 int
@@ -459,6 +471,7 @@ iterator_next(struct iterator *it, struct tuple **ret)
 	/* In case of ephemeral space there is no need to check schema version */
 	if (it->space_id == 0)
 		return it->next(it, ret);
+	int rc = 0;
 	if (unlikely(it->space_cache_version != space_cache_version)) {
 		struct space *space = space_by_id(it->space_id);
 		if (space == NULL)
@@ -468,8 +481,19 @@ iterator_next(struct iterator *it, struct tuple **ret)
 		    index->space_cache_version > it->space_cache_version)
 			goto invalidate;
 		it->space_cache_version = space_cache_version;
+		it->space = space;
 	}
-	return it->next(it, ret);
+	rc = it->next(it, ret);
+	if (it->is_raw || *ret == NULL)
+		return rc;
+	if (space_is_being_upgraded(it->space)) {
+		struct tuple *upgraded_tuple = NULL;
+		if (space_upgrade_convert_tuple(it->space, *ret,
+						&upgraded_tuple) != 0)
+				return -1;
+		*ret = upgraded_tuple;
+	}
+	return rc;
 
 invalidate:
 	*ret = NULL;

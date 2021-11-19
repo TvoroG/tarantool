@@ -257,6 +257,7 @@ struct iterator {
 	 * upgrade modifications. See iterator_next() for the details.
 	 */
 	bool is_raw;
+	struct space *space;
 	/**
 	 * Pointer to the index the iterator is for.
 	 * Guaranteed to be valid only if the schema
