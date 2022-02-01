@@ -83,6 +83,7 @@
 #include "core/crash.h"
 #include "ssl_cert_paths_discover.h"
 #include "core/errinj.h"
+#include "box/lua/console.h"
 
 static pid_t master_pid = getpid();
 static struct pidfh *pid_file_handle;
@@ -185,21 +186,21 @@ signal_sigint_cb(ev_loop *loop, struct ev_signal *w, int revents)
 	(void) w;
 	(void) revents;
 
+	const char* prompt = get_prompt(tarantool_L);
 	/**
 	 * If running in daemon mode, tarantool exits on SIGINT.
 	 * Complain about possibly sudden and unexpected death.
 	 */
-	if (pid_file) {
+	if (prompt == NULL) {
 		say_crit("got signal %d - %s", w->signum, strsignal(w->signum));
 		tarantool_exit(0);
 		return;
 	}
-
 	/**
 	 * Setting prompt explicitly every time, cause of
 	 * need to return from search mode.
 	 */
-	rl_set_prompt("tarantool> ");
+	rl_set_prompt(prompt);
 
 	const char *line_end = "^C\n";
 	ssize_t rc = write(STDOUT_FILENO, line_end, strlen(line_end));

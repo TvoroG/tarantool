@@ -225,6 +225,23 @@ console_push_line(char *line)
 #endif
 }
 
+const char * get_prompt(struct lua_State *L) {
+	const char * prompt = NULL;
+	/*
+	 * I actually don't know from where the variable 'prompt' can be fetched.
+	 * AFAIU that must be some global table. So the first call here must be some
+	 * lua_getglobal(L, "some_table"); before we call getfield from this table.
+	 */
+	lua_getglobal(L, "repl_mt");
+	if (lua_gettop(L) > 0) {
+		lua_getfield(L, 1, "prompt");
+		prompt = lua_tostring(L, -1);
+		lua_pop(L, 1);
+	}
+	lua_pop(L, 1);
+	return prompt;
+}
+
 /* implements readline() Lua API */
 static int
 lbox_console_readline(struct lua_State *L)

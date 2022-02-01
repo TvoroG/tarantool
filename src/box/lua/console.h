@@ -35,9 +35,10 @@ extern "C" {
 #endif /* defined(__cplusplus) */
 
 struct lua_State;
-
 void
 tarantool_lua_console_init(struct lua_State *L);
+
+const char * get_prompt(struct lua_State *L);
 
 #if defined(__cplusplus)
 } /* extern "C" */
